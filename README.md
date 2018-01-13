@@ -80,11 +80,10 @@ var cards = vCard.parse( string )
 
 ### Format: jCard
 
-```js
-var card = vCard.fromJSON( data )
-```
+The jCard format is defined in [RFC 7095](https://tools.ietf.org/html/rfc7095).
 
 ```js
+var card = vCard.fromJSON( data )
 var jcard = card.toJSON()
 ```
 
@@ -116,7 +115,9 @@ var jcard = card.toJSON()
 ]
 ```
 
-### Format: VCF
+### Format: vCard
+
+The vCard format (version 4.0) is defined in [RFC 6350](https://tools.ietf.org/html/rfc6350).
 
 ```js
 var vcf = card.toString()
