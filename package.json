@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "camelcase": "~3.0.0",
+    "chai": "^4.1.2",
     "foldline": "https://github.com/KAYLukas/node-foldline.git#master"
   },
   "devDependencies": {
