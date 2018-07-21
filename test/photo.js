@@ -18,8 +18,7 @@ suite( 'vCard', function() {
       var card = new vCard().parse( data )
       var photo = card.get( 'photo' )
       assert.ok( photo instanceof vCard.Property )
-      assert.equal( photo.encoding, 'BASE64' )
-      assert.equal( photo.type, 'jpeg' )
+      assert.ok( photo.valueOf().startsWith('data:image/jpeg;base64,' ) )
     })
 
   })

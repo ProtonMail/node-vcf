@@ -6,20 +6,20 @@ suite( 'vCard', function() {
 
   suite( 'JSON / jCard', function() {
 
+    var jcardStr = JSON.stringify(require('./data/jcard'))
+    var data = require('./data/jcard')
+
     test( 'fromJSON', function() {
-      var data = require( './data/jcard' )
-      var card = vCard.fromJSON( data )
+      var card = vCard.fromJSON( jcardStr )
     })
 
     test( 'toJSON', function() {
-      var data = require( './data/jcard' )
-      var card = vCard.fromJSON( data )
+      var card = vCard.fromJSON( jcardStr )
       assert.deepEqual( card.toJSON(), data )
     })
 
     test( 'toJCard', function() {
-      var data = require( './data/jcard' )
-      var card = vCard.fromJSON( data )
+      var card = vCard.fromJSON( jcardStr )
       assert.deepEqual( card.toJCard(), data )
     })
 

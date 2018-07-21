@@ -88,6 +88,8 @@ module.exports = parseLines;
 },{"./property":2,"camelcase":4}],2:[function(require,module,exports){
 'use strict';
 
+var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; }();
+
 /**
  * vCard Property
  * @constructor
@@ -101,12 +103,12 @@ function Property(field, value, params) {
 
   if (!(this instanceof Property)) return new Property(value);
 
-  if (params != null) Object.assign(this, params);
-
+  this._params = params != null ? Object.assign({}, params) : {};
   this._field = field;
   this._data = value;
 
   Object.defineProperty(this, '_field', { enumerable: false });
+  Object.defineProperty(this, '_params', { enumerable: false });
   Object.defineProperty(this, '_data', { enumerable: false });
 }
 
@@ -116,13 +118,15 @@ function Property(field, value, params) {
  * @return {Property}
  */
 Property.fromJSON = function (data) {
+  var _data = _slicedToArray(data, 4),
+      field = _data[0],
+      params = _data[1],
+      valType = _data[2],
+      value = _data[3];
 
-  var field = data[0];
-  var params = data[1];
+  if (!/text/i.test(valType)) params.value = valType;
 
-  if (!/text/i.test(data[2])) params.value = data[2];
-
-  var value = Array.isArray(data[3]) ? data[3].join(';') : data[3];
+  if (Array.isArray(value)) value = value.join(';');
 
   return new Property(field, value, params);
 };
@@ -153,7 +157,19 @@ Property.prototype = {
    */
   is: function is(type) {
     type = (type + '').toLowerCase();
-    return Array.isArray(this.type) ? this.type.toLowerCase().indexOf(type) : this.type.toLowerCase() === type;
+    return Array.isArray(this.getType()) ? this.getType().toLowerCase().indexOf(type) : this.getType().toLowerCase() === type;
+  },
+
+  get group() {
+    return this.getParams().group;
+  },
+
+  get charset() {
+    return this.getParams().charset;
+  },
+
+  get encoding() {
+    return this.getParams().encoding;
   },
 
   /**
@@ -169,14 +185,14 @@ Property.prototype = {
    * @return {String}
    */
   getType: function getType() {
-    return this.type;
+    return this.getParams().type;
   },
 
   /**
    * Get property group value
    */
   getGroup: function getGroup() {
-    return this.group;
+    return this.getParams().group;
   },
 
   /**
@@ -184,7 +200,7 @@ Property.prototype = {
    * @return {Object}
    */
   getParams: function getParams() {
-    return Object.assign({}, this);
+    return this._params;
   },
 
   /**
@@ -200,7 +216,7 @@ Property.prototype = {
    * @return {Property}
    */
   clone: function clone() {
-    return new Property(this._field, this._data, this);
+    return new Property(this._field, this._data, this.getParams());
   },
 
   /**
@@ -209,17 +225,48 @@ Property.prototype = {
    * @return {String}
    */
   toString: function toString(version) {
+    var group = this.getGroup();
+    var propName = capitalDashCase(this._field);
+    if (typeof group == 'string' && group.length > 0) {
+      propName = [group, propName].join('.');
+    }
+    var params = this.getParams();
 
-    var propName = (this.group ? this.group + '.' : '') + capitalDashCase(this._field);
-    var keys = Object.keys(this);
-    var params = [];
+    var paramStr = '';
+    var _iteratorNormalCompletion = true;
+    var _didIteratorError = false;
+    var _iteratorError = undefined;
 
-    for (var i = 0; i < keys.length; i++) {
-      if (keys[i] === 'group') continue;
-      params.push(capitalDashCase(keys[i]) + '=' + this[keys[i]]);
+    try {
+      for (var _iterator = Object.entries(params)[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+        var _ref = _step.value;
+
+        var _ref2 = _slicedToArray(_ref, 2);
+
+        var k = _ref2[0];
+        var v = _ref2[1];
+
+        if (k.toLowerCase() === 'group') continue;
+        paramStr += ';' + capitalDashCase(k) + '=' + v;
+      }
+    } catch (err) {
+      _didIteratorError = true;
+      _iteratorError = err;
+    } finally {
+      try {
+        if (!_iteratorNormalCompletion && _iterator.return) {
+          _iterator.return();
+        }
+      } finally {
+        if (_didIteratorError) {
+          throw _iteratorError;
+        }
+      }
     }
 
-    return propName + (params.length ? ';' + params.join(';') : params) + ':' + (Array.isArray(this._data) ? this._data.join(';') : this._data.trim());
+    var valueStr = Array.isArray(this._data) ? this._data.join(';') : this._data.trim();
+
+    return propName + paramStr + ':' + valueStr;
   },
 
   /**
@@ -236,23 +283,32 @@ Property.prototype = {
    */
   toJSON: function toJSON() {
 
-    var params = Object.assign({}, this);
+    var params = this.getParams();
 
-    if (params.value === 'text') {
-      params.value = void 0;
-      delete params.value;
-    }
+    // RFC 7095, §3.4.1 <https://tools.ietf.org/html/rfc7095#section-3.4.1>:
+    //      vCard defines a "VALUE" property parameter (Section 5.2 of
+    //      [RFC6350]).  This property parameter MUST NOT be added to the
+    //      parameters object.  Instead, the value type is signaled through the
+    //      type identifier in the third element of the array describing the
+    //      property.
+    var valueType = this.getParams().value ? this.getParams().value : 'text';
+    params.value = undefined;
+    delete params.value;
 
-    var data = [this._field, params, this.value || 'text'];
+    var data = [this._field, params, valueType];
 
     switch (this._field) {
       default:
         data.push(this._data);break;
       case 'adr':
       case 'n':
-        data.push(this._data.split(';'));
+        if (this._data instanceof Array) {
+          data.push(this._data);
+        } else {
+          data.push(this._data.split(';'));
+        }
+        break;
     }
-
     return data;
   }
 
@@ -261,6 +317,8 @@ Property.prototype = {
 
 },{}],3:[function(require,module,exports){
 'use strict';
+
+var _slicedToArray = function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"]) _i["return"](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError("Invalid attempt to destructure non-iterable instance"); } }; }();
 
 /**
  * vCard
@@ -388,24 +446,74 @@ vCard.format = function (card, version) {
 
   if (!vCard.isSupported(version)) throw new Error('Unsupported vCard version "' + version + '"');
 
+  var propToFormattedLine = function propToFormattedLine(prop) {
+    return vCard.foldLine(prop.toString(version).replace(/\r?\n/g, '\\n'), 75);
+  };
   var vcf = [];
 
   vcf.push('BEGIN:VCARD');
   vcf.push('VERSION:' + version);
 
-  var props = Object.keys(card.data);
-  var prop = '';
+  var _iteratorNormalCompletion = true;
+  var _didIteratorError = false;
+  var _iteratorError = undefined;
 
-  for (var i = 0; i < props.length; i++) {
-    if (props[i] === 'version') continue;
-    prop = card.data[props[i]];
-    if (Array.isArray(prop)) {
-      for (var k = 0; k < prop.length; k++) {
-        if (prop[k].isEmpty()) continue;
-        vcf.push(vCard.foldLine(prop[k].toString(version).replace(/\r?\n/g, '\\n'), 75));
+  try {
+    for (var _iterator = Object.entries(card.data)[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+      var _ref = _step.value;
+
+      var _ref2 = _slicedToArray(_ref, 2);
+
+      var key = _ref2[0];
+      var val = _ref2[1];
+
+      if (key === 'version') continue;
+
+      if (!Array.isArray(val)) {
+        var prop = val;
+        if (prop.isEmpty()) continue;
+        vcf.push(propToFormattedLine(prop));
+      } else {
+        var propArray = val;
+        var _iteratorNormalCompletion2 = true;
+        var _didIteratorError2 = false;
+        var _iteratorError2 = undefined;
+
+        try {
+          for (var _iterator2 = propArray[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+            var prop = _step2.value;
+
+            if (prop.isEmpty()) continue;
+            vcf.push(propToFormattedLine(prop));
+          }
+        } catch (err) {
+          _didIteratorError2 = true;
+          _iteratorError2 = err;
+        } finally {
+          try {
+            if (!_iteratorNormalCompletion2 && _iterator2.return) {
+              _iterator2.return();
+            }
+          } finally {
+            if (_didIteratorError2) {
+              throw _iteratorError2;
+            }
+          }
+        }
       }
-    } else if (!prop.isEmpty()) {
-      vcf.push(vCard.foldLine(prop.toString(version).replace(/\r?\n/g, '\\n'), 75));
+    }
+  } catch (err) {
+    _didIteratorError = true;
+    _iteratorError = err;
+  } finally {
+    try {
+      if (!_iteratorNormalCompletion && _iterator.return) {
+        _iterator.return();
+      }
+    } finally {
+      if (_didIteratorError) {
+        throw _iteratorError;
+      }
     }
   }
 
@@ -413,18 +521,14 @@ vCard.format = function (card, version) {
 
   return vcf.join('\r\n');
 };
-
 // vCard Property constructor
 vCard.Property = require('./property');
-
 /**
  * vCard prototype
  * @type {Object}
  */
 vCard.prototype = {
-
   constructor: vCard,
-
   /**
    * Get a vCard property
    * @param  {String} key
@@ -433,11 +537,13 @@ vCard.prototype = {
   get: function get(key) {
 
     if (this.data[key] == null) {
+
       return this.data[key];
     }
 
     if (Array.isArray(this.data[key])) {
       return this.data[key].map(function (prop) {
+
         return prop.clone();
       });
     } else {
@@ -557,21 +663,41 @@ vCard.prototype = {
    */
   toJCard: function toJCard(version) {
 
-    version = version || '4.0';
+    version = version || this.version || '4.0';
 
-    var keys = Object.keys(this.data);
     var data = [['version', {}, 'text', version]];
-    var prop = null;
 
-    for (var i = 0; i < keys.length; i++) {
-      if (keys[i] === 'version') continue;
-      prop = this.data[keys[i]];
-      if (Array.isArray(prop)) {
-        for (var k = 0; k < prop.length; k++) {
-          data.push(prop[k].toJSON());
+    var _iteratorNormalCompletion3 = true;
+    var _didIteratorError3 = false;
+    var _iteratorError3 = undefined;
+
+    try {
+      for (var _iterator3 = Object.keys(this.data)[Symbol.iterator](), _step3; !(_iteratorNormalCompletion3 = (_step3 = _iterator3.next()).done); _iteratorNormalCompletion3 = true) {
+        var key = _step3.value;
+
+        var prop = this.data[key];
+        if (key === 'version') continue;
+
+        if (Array.isArray(prop)) {
+          for (var k = 0; k < prop.length; k++) {
+            data.push(prop[k].toJSON());
+          }
+        } else {
+          data.push(prop.toJSON());
         }
-      } else {
-        data.push(prop.toJSON());
+      }
+    } catch (err) {
+      _didIteratorError3 = true;
+      _iteratorError3 = err;
+    } finally {
+      try {
+        if (!_iteratorNormalCompletion3 && _iterator3.return) {
+          _iterator3.return();
+        }
+      } finally {
+        if (_didIteratorError3) {
+          throw _iteratorError3;
+        }
       }
     }
 
